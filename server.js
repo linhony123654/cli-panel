@@ -743,15 +743,24 @@ route('GET', '/api/system/hud', async () => system.getSystemHud());
 
 // ---------------------------------------------------------------- tmux live capture & dispatch
 route('GET', '/api/tmux/pane', async (req, res, body, p, query) => {
-  const sess = query?.get('session');
+  const sess = query?.get('target') || query?.get('session');
   const lines = query?.get('lines');
   return sessions.captureTmuxPane(sess, lines);
 });
 route('POST', '/api/tmux/send', async (req, res, body) => {
-  return sessions.sendTmuxKeys(body.session, body.text, body.enter !== false);
+  return sessions.sendTmuxKeys(body.target || body.session, body.text, body.enter !== false);
 });
 route('POST', '/api/tmux/signal', async (req, res, body) => {
-  return sessions.sendTmuxSignal(body.session, body.signal);
+  return sessions.sendTmuxSignal(body.target || body.session, body.signal);
+});
+route('POST', '/api/tmux/window/kill', async (req, res, body) => {
+  return sessions.killTmuxWindow(body.target);
+});
+route('POST', '/api/tmux/window/create', async (req, res, body) => {
+  return sessions.createTmuxWindow(body.session, body.name, body.path);
+});
+route('POST', '/api/tmux/window/select', async (req, res, body) => {
+  return sessions.selectTmuxWindow(body.target);
 });
 
 route('GET', '/api/backups', async () => ({ items: U.listBackups().slice(0, 200) }));

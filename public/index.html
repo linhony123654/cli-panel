@@ -156,8 +156,8 @@
             title="打开 Tmux 实时终端监视与网页派工"
           >
             <span class="session-dot"></span>
-            <span class="session-desktop-text">终端监视 ({{ state.sessions?.tmux?.length || 0 }})</span>
-            <span class="session-mobile-text">终端:{{ state.sessions?.tmux?.length || 0 }}</span>
+            <span class="session-desktop-text">终端监视 ({{ totalTmuxWindows }} 窗 / {{ state.sessions?.tmux?.length || 0 }} 会话<template v-if="totalIdleTmuxWindows"> · {{ totalIdleTmuxWindows }} 空闲</template>)</span>
+            <span class="session-mobile-text">终端:{{ state.sessions?.tmux?.length || 0 }}({{ totalTmuxWindows }}窗)</span>
           </button>
 
           <button @click="loadState" class="btn btn-ghost btn-sm" :disabled="loading" title="刷新状态">
@@ -2084,11 +2084,13 @@
                 <span style="font-size: 13px; color: var(--ink-2); font-weight: 500;">选择输出源:</span>
                 <select v-model="daemonSource" @change="loadDaemonLogs" class="form-input font-mono" style="padding: 5px 12px; width: auto; font-size: 13px;">
                   <option value="pm2">PM2 服务进程 (cli-panel)</option>
-                  <option v-for="t in (state.sessions?.tmux || [])" :key="t.name" :value="'tmux:' + t.name">
-                    Tmux 终端: {{ t.name }}
-                  </option>
-                  <option v-if="!(state.sessions?.tmux?.length)" value="tmux:deepseek">Tmux: deepseek</option>
-                  <option v-if="!(state.sessions?.tmux?.length)" value="tmux:codex">Tmux: codex</option>
+                  <optgroup v-for="t in (state.sessions?.tmux || [])" :key="t.name" :label="'Tmux 会话: ' + t.name">
+                    <option :value="'tmux:' + t.name">会话 {{ t.name }} (活跃主窗口)</option>
+                    <option v-for="w in (t.windows || [])" :key="w.target" :value="'tmux:' + w.target">
+                      ↳ 窗口 #{{ w.index }} [{{ w.name }}] - {{ w.is_idle ? '空闲待命' : w.command }}
+                    </option>
+                  </optgroup>
+                  <option v-if="!(state.sessions?.tmux?.length)" value="tmux:cc">Tmux: cc</option>
                 </select>
 
                 <span style="font-size: 13px; color: var(--ink-2); font-weight: 500; margin-left: 6px;">抓取行数:</span>
@@ -3408,30 +3410,88 @@
                 <span style="font-size: 11px; color: var(--ink-muted);">在终端输入 <code>tmux a -t &lt;name&gt;</code> 附着会话</span>
               </div>
 
-              <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; flex-direction: column; gap: 8px;">
                 <div
                   v-for="s in (state.sessions?.tmux || [])"
                   :key="s.name"
-                  style="background: var(--bg-input); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;"
+                  style="background: var(--bg-input); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;"
                 >
-                  <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                    <span class="badge badge-accent font-mono" style="font-size: 12px;">{{ s.name }}</span>
-                    <span class="badge font-mono" style="font-size: 10px;">{{ s.windowCount }} 窗口</span>
-                    <span v-if="s.attached" class="badge" style="background: rgba(59, 192, 142, 0.15); color: var(--accent); font-size: 10px;">已附着</span>
-                    <span v-else class="badge" style="color: var(--ink-muted); font-size: 10px;">后台空闲</span>
-                    <span style="font-size: 11px; color: var(--ink-muted);">创建于 {{ s.created }}</span>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap;">
+                      <span class="badge badge-accent font-mono" style="font-size: 12px;">{{ s.name }}</span>
+                      <span class="badge font-mono" style="font-size: 10px;">{{ s.windowCount }} 窗口</span>
+                      <span v-if="s.idleCount" class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--ink-muted); font-size: 10px;">
+                        {{ s.idleCount }} 空闲待命
+                      </span>
+                      <span v-if="s.busyCount" class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent); font-size: 10px;">
+                        {{ s.busyCount }} 活跃任务
+                      </span>
+                      <span v-if="s.attached" class="badge" style="background: rgba(59, 192, 142, 0.15); color: var(--accent); font-size: 10px;">已附着</span>
+                      <span v-else class="badge" style="color: var(--ink-muted); font-size: 10px;">后台空闲</span>
+                      <span style="font-size: 11px; color: var(--ink-muted);">创建于 {{ s.created }}</span>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                      <button type="button" @click="openTmuxConsole(s.name)" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 3px 8px; min-height: 28px;" title="打开实时终端回显与指令派发">
+                        🖥️ 实时监视
+                      </button>
+                      <button type="button" @click="promptNewTmuxWindow(s.name)" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px; min-height: 28px;" title="在此会话下新建一个终端窗口">
+                        + 新建窗口
+                      </button>
+                      <button type="button" @click="copyText(s.attach_cmd)" class="btn btn-ghost btn-sm" style="font-size: 11px; padding: 3px 8px; min-height: 28px;" title="复制附着命令">
+                        📋 复制 attach
+                      </button>
+                      <button type="button" @click="killTmux(s.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 11px; padding: 3px 8px; min-height: 28px;" title="关闭此 Tmux 会话">
+                        关闭会话
+                      </button>
+                    </div>
                   </div>
 
-                  <div style="display: flex; align-items: center; gap: 6px;">
-                    <button type="button" @click="openTmuxConsole(s.name)" class="btn btn-primary btn-sm" style="font-size: 11px; padding: 3px 8px; min-height: 28px;" title="打开实时终端回显与指令派发">
-                      🖥️ 实时监视与派工
-                    </button>
-                    <button type="button" @click="copyText(s.attach_cmd)" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px; min-height: 28px;" title="复制附着命令">
-                      📋 复制 attach
-                    </button>
-                    <button type="button" @click="killTmux(s.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 11px; padding: 3px 8px; min-height: 28px;" title="关闭此 Tmux 会话">
-                      关闭会话
-                    </button>
+                  <!-- Windows Breakdown List -->
+                  <div v-if="s.windows && s.windows.length" style="width: 100%; border-top: 1px dashed var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                    <div style="font-size: 11px; color: var(--ink-muted); display: flex; justify-content: space-between; align-items: center;">
+                      <span>内部窗口清单 (包含未使用的空闲窗口，共 {{ s.windows.length }} 个):</span>
+                      <span style="font-size: 10px;">点击窗口可直接进入回显或关闭</span>
+                    </div>
+
+                    <div
+                      v-for="w in s.windows"
+                      :key="w.target"
+                      style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;"
+                    >
+                      <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap;">
+                        <span class="badge font-mono" :class="w.active ? 'badge-accent' : ''" style="font-size: 10px;">
+                          #{{ w.index }}
+                        </span>
+                        <span style="font-size: 12px; font-weight: 600; color: var(--ink-base); font-family: monospace;">
+                          {{ w.name }}
+                        </span>
+                        <span v-if="w.is_idle" class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--ink-muted); font-size: 10px;" title="Shell 处于待命状态，未在运行耗时/AI任务">
+                          ⚪ 空闲待命 (未用到)
+                        </span>
+                        <span v-else class="badge badge-accent font-mono" style="font-size: 10px;" title="当前正在运行前台程序">
+                          🟢 运行中: {{ w.command }}
+                        </span>
+                        <span class="font-mono" style="font-size: 11px; color: var(--ink-muted);" :title="w.rawPath">
+                          📁 {{ w.path }}
+                        </span>
+                        <span v-if="w.pid" class="font-mono" style="font-size: 10px; color: var(--ink-muted);">
+                          PID: {{ w.pid }}
+                        </span>
+                      </div>
+
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <button type="button" @click="openTmuxConsole(w.target)" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px; min-height: 24px;" title="进入此窗口终端">
+                          🖥️ 进入此窗口
+                        </button>
+                        <button type="button" @click="copyText(w.attach_cmd)" class="btn btn-ghost btn-sm" style="font-size: 10px; padding: 2px 6px; min-height: 24px;" title="复制附着到此窗口的命令">
+                          📋 附着命令
+                        </button>
+                        <button type="button" @click="promptKillTmuxWindow(w.target, w.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 10px; padding: 2px 6px; min-height: 24px;" title="关闭此窗口">
+                          ✕ 关闭窗口
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -3492,7 +3552,9 @@
           <div class="modal-head" style="padding: 12px 16px; border-bottom: 1px solid var(--line);">
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <span class="status-beacon" style="background: var(--accent); box-shadow: 0 0 8px var(--accent);"></span>
-              <h3 class="modal-title font-mono" style="font-size: 15px;">Tmux 实时控制台: {{ activeTmuxSession }}</h3>
+              <h3 class="modal-title font-mono" style="font-size: 15px;">
+                Tmux 控制台: <span style="color: var(--accent);">{{ activeTmuxTarget || activeTmuxSession }}</span>
+              </h3>
 
               <!-- Session Switcher Pills -->
               <div style="display: flex; gap: 4px; margin-left: 8px;">
@@ -3500,12 +3562,12 @@
                   v-for="s in (state.sessions?.tmux || [])"
                   :key="s.name"
                   type="button"
-                  @click="activeTmuxSession = s.name; loadTmuxPane();"
+                  @click="switchTmuxSession(s.name)"
                   class="btn btn-sm font-mono"
                   :class="activeTmuxSession === s.name ? 'btn-primary' : 'btn-secondary'"
                   style="font-size: 11px; padding: 2px 8px; min-height: 26px;"
                 >
-                  {{ s.name }}
+                  {{ s.name }} ({{ s.windows?.length || s.windowCount }}窗)
                 </button>
               </div>
             </div>
@@ -3520,7 +3582,7 @@
                 :title="tmuxAutoPoll ? '点击暂停自动刷新' : '点击开启每 2.5 秒刷新'"
               >
                 <span :style="{ color: tmuxAutoPoll ? 'var(--accent)' : 'var(--ink-muted)' }">●</span>
-                <span class="desktop-only">{{ tmuxAutoPoll ? '自动刷新中 (2.5s)' : '已暂停自动刷新' }}</span>
+                <span class="desktop-only">{{ tmuxAutoPoll ? '自动刷新 (2.5s)' : '已暂停' }}</span>
               </button>
               <button
                 type="button"
@@ -3535,6 +3597,43 @@
                 </svg>
               </button>
               <button @click="closeTmuxConsole" class="btn btn-ghost btn-sm" style="padding: 4px 8px;">✕</button>
+            </div>
+          </div>
+
+          <!-- Window Tabs Bar -->
+          <div style="padding: 6px 14px; background: rgba(14, 22, 19, 0.95); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
+            <div style="display: flex; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none;">
+              <span style="font-size: 11px; color: var(--ink-muted); white-space: nowrap; flex-shrink: 0;">切换窗口:</span>
+              <button
+                v-for="w in currentSessionWindows"
+                :key="w.target"
+                type="button"
+                @click="switchTmuxWindow(w)"
+                class="btn btn-sm font-mono"
+                :class="(activeTmuxTarget === w.target || (!activeTmuxTarget && w.active)) ? 'btn-primary' : 'btn-secondary'"
+                style="font-size: 11px; padding: 3px 8px; min-height: 26px; white-space: nowrap; flex-shrink: 0;"
+              >
+                <span>#{{ w.index }} {{ w.name }}</span>
+                <span v-if="w.is_idle" style="font-size: 10px; opacity: 0.7; margin-left: 4px;">(空闲)</span>
+                <span v-else style="font-size: 10px; color: var(--accent); margin-left: 4px;">({{ w.command }})</span>
+              </button>
+              <span v-if="!currentSessionWindows.length" style="font-size: 11px; color: var(--ink-muted);">当前会话无窗口</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+              <button type="button" @click="promptNewTmuxWindow(activeTmuxSession)" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px; min-height: 26px;" title="在此会话中新建一个终端窗口">
+                + 新建窗口
+              </button>
+              <button
+                v-if="currentSessionWindows.length > 1"
+                type="button"
+                @click="promptKillTmuxWindow(activeTmuxTarget, (currentSessionWindows.find(x => x.target === activeTmuxTarget)?.name))"
+                class="btn btn-ghost btn-sm"
+                style="color: var(--danger); font-size: 11px; padding: 2px 6px; min-height: 26px;"
+                title="关闭当前查看的窗口"
+              >
+                ✕ 关闭此窗
+              </button>
             </div>
           </div>
 
@@ -4166,6 +4265,84 @@
               </button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <!-- 9. New Tmux Window Modal -->
+      <div v-if="showNewTmuxWindowModal" class="modal-backdrop" @click.self="showNewTmuxWindowModal = false">
+        <div class="modal-dialog" style="width: min(500px, 94vw);">
+          <div class="modal-head">
+            <h3 class="modal-title font-mono">新建 Tmux 终端窗口</h3>
+            <button @click="showNewTmuxWindowModal = false" class="btn btn-ghost btn-sm">✕</button>
+          </div>
+
+          <form @submit.prevent="executeCreateTmuxWindow">
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; padding: 18px 20px;">
+              <div class="form-group">
+                <label class="form-label">目标 Tmux 会话</label>
+                <select v-model="newTmuxWindowForm.session" class="form-input font-mono" required>
+                  <option v-for="s in (state.sessions?.tmux || [])" :key="s.name" :value="s.name">
+                    {{ s.name }} (当前已有 {{ s.windows?.length || s.windowCount }} 个窗口)
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">新窗口名称 (Window Name)</label>
+                <input
+                  v-model="newTmuxWindowForm.name"
+                  type="text"
+                  class="form-input font-mono"
+                  placeholder="例如 bash / worker / dev"
+                  required
+                />
+                <span style="font-size: 11px; color: var(--ink-muted); margin-top: 4px;">新建的窗口可用于后台运行长任务或备用 Shell。</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">初始工作路径 (可选)</label>
+                <input
+                  v-model="newTmuxWindowForm.path"
+                  type="text"
+                  class="form-input font-mono"
+                  placeholder="留空默认当前目录，或例如 /home/ubuntu/obsidian-web"
+                />
+              </div>
+            </div>
+
+            <div class="modal-foot">
+              <button type="button" @click="showNewTmuxWindowModal = false" class="btn btn-ghost">取消</button>
+              <button type="submit" class="btn btn-primary" :disabled="creatingTmuxWindow">
+                {{ creatingTmuxWindow ? '创建中...' : '立即创建并进入' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 10. Kill Tmux Window Confirmation Modal -->
+      <div v-if="showKillTmuxWindowModal" class="modal-backdrop" @click.self="showKillTmuxWindowModal = false">
+        <div class="modal-dialog" style="width: min(440px, 92vw);">
+          <div class="modal-head">
+            <h3 class="modal-title" style="color: var(--danger);">确认关闭 Tmux 窗口</h3>
+            <button @click="showKillTmuxWindowModal = false" class="btn btn-ghost btn-sm">✕</button>
+          </div>
+
+          <div class="modal-body" style="padding: 16px 20px;">
+            <p style="font-size: 13px; color: var(--ink-2); line-height: 1.6;">
+              确定要关闭 Tmux 窗口 <strong class="font-mono text-accent" style="color: var(--danger) !important;">{{ windowToKill?.target }} ({{ windowToKill?.name }})</strong> 吗？
+            </p>
+            <p style="font-size: 12px; color: var(--ink-muted); margin-top: 6px;">
+              如果该窗口内有正在前台运行的命令或会话，将会被直接终止并释放资源。
+            </p>
+          </div>
+
+          <div class="modal-foot">
+            <button type="button" @click="showKillTmuxWindowModal = false" class="btn btn-ghost">取消</button>
+            <button type="button" @click="executeKillTmuxWindow" class="btn btn-danger" :disabled="killingTmuxWindow">
+              {{ killingTmuxWindow ? '正在关闭...' : '确认关闭窗口' }}
+            </button>
+          </div>
         </div>
       </div>
 

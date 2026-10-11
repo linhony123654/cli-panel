@@ -1219,12 +1219,40 @@ const app = createApp({
 
     const showTmuxModal = ref(false);
     const activeTmuxSession = ref('');
+    const activeTmuxTarget = ref('');
     const tmuxTerminalText = ref('');
     const tmuxTerminalLines = ref(100);
     const tmuxLoadingPane = ref(false);
     const tmuxAutoPoll = ref(true);
     const tmuxDispatchText = ref('');
     const tmuxSending = ref(false);
+
+    // New Window Modal state
+    const showNewTmuxWindowModal = ref(false);
+    const newTmuxWindowForm = ref({ session: '', name: 'shell', path: '' });
+    const creatingTmuxWindow = ref(false);
+
+    // Kill Window Modal state
+    const showKillTmuxWindowModal = ref(false);
+    const windowToKill = ref(null);
+    const killingTmuxWindow = ref(false);
+
+    const totalTmuxWindows = computed(() => {
+      const list = state.value.sessions?.tmux || [];
+      return list.reduce((acc, s) => acc + (s.windows?.length || s.windowCount || 1), 0);
+    });
+
+    const totalIdleTmuxWindows = computed(() => {
+      const list = state.value.sessions?.tmux || [];
+      return list.reduce((acc, s) => acc + (s.idleCount || 0), 0);
+    });
+
+    const currentSessionWindows = computed(() => {
+      const list = state.value.sessions?.tmux || [];
+      const sess = list.find(s => s.name === activeTmuxSession.value);
+      return sess?.windows || [];
+    });
+
     const quickPrompts = [
       'git status',
       '/clear',
@@ -1249,10 +1277,11 @@ const app = createApp({
     }
 
     async function loadTmuxPane() {
-      if (!activeTmuxSession.value) return;
+      const target = activeTmuxTarget.value || activeTmuxSession.value;
+      if (!target) return;
       tmuxLoadingPane.value = true;
       try {
-        const res = await api(`/api/tmux/pane?session=${encodeURIComponent(activeTmuxSession.value)}&lines=${tmuxTerminalLines.value}`);
+        const res = await api(`/api/tmux/pane?target=${encodeURIComponent(target)}&lines=${tmuxTerminalLines.value}`);
         tmuxTerminalText.value = res.text || '（终端暂无输出）';
         setTimeout(() => {
           const el = document.getElementById('tmux-term-viewport');
@@ -1265,13 +1294,22 @@ const app = createApp({
       }
     }
 
-    function openTmuxConsole(sessName) {
-      if (sessName) {
-        activeTmuxSession.value = sessName;
+    function openTmuxConsole(targetOrSession) {
+      if (targetOrSession && String(targetOrSession).includes(':')) {
+        const parts = String(targetOrSession).split(':');
+        activeTmuxSession.value = parts[0];
+        activeTmuxTarget.value = targetOrSession;
+      } else if (targetOrSession) {
+        activeTmuxSession.value = targetOrSession;
+        const s = (state.value.sessions?.tmux || []).find(x => x.name === targetOrSession);
+        activeTmuxTarget.value = s?.windows?.[0]?.target || targetOrSession;
       } else if (state.value.sessions?.tmux?.length) {
-        activeTmuxSession.value = state.value.sessions.tmux[0].name;
+        const s = state.value.sessions.tmux[0];
+        activeTmuxSession.value = s.name;
+        activeTmuxTarget.value = s.windows?.[0]?.target || s.name;
       } else {
         activeTmuxSession.value = 'cc';
+        activeTmuxTarget.value = 'cc';
       }
       showSessionsModal.value = false;
       showTmuxModal.value = true;
@@ -1285,12 +1323,26 @@ const app = createApp({
       }, 2500);
     }
 
+    function switchTmuxSession(sessName) {
+      activeTmuxSession.value = sessName;
+      const s = (state.value.sessions?.tmux || []).find(x => x.name === sessName);
+      activeTmuxTarget.value = s?.windows?.[0]?.target || sessName;
+      loadTmuxPane();
+    }
+
+    function switchTmuxWindow(win) {
+      if (!win) return;
+      activeTmuxTarget.value = win.target;
+      loadTmuxPane();
+    }
+
     function closeTmuxConsole() {
       clearInterval(tmuxPollTimer);
       showTmuxModal.value = false;
     }
 
     async function sendTmuxCommand(cmdText) {
+      const target = activeTmuxTarget.value || activeTmuxSession.value;
       const text = (cmdText !== undefined ? cmdText : tmuxDispatchText.value) || '';
       if (!text.trim() && cmdText === undefined) return;
       tmuxSending.value = true;
@@ -1298,13 +1350,13 @@ const app = createApp({
         await api('/api/tmux/send', {
           method: 'POST',
           body: {
-            session: activeTmuxSession.value,
+            target,
             text,
             enter: true,
           }
         });
         if (cmdText === undefined) tmuxDispatchText.value = '';
-        showToast(`已向 Tmux [${activeTmuxSession.value}] 发送指令`, 'success');
+        showToast(`已向 Tmux [${target}] 发送指令`, 'success');
         setTimeout(() => loadTmuxPane(), 350);
       } catch (err) {
         showToast('发送指令失败: ' + err.message, 'error');
@@ -1314,18 +1366,85 @@ const app = createApp({
     }
 
     async function sendTmuxSignal(sig) {
+      const target = activeTmuxTarget.value || activeTmuxSession.value;
       try {
         await api('/api/tmux/signal', {
           method: 'POST',
           body: {
-            session: activeTmuxSession.value,
+            target,
             signal: sig,
           }
         });
-        showToast(`已发送控制信号 ${sig.toUpperCase()}`, 'info');
+        showToast(`已向 [${target}] 发送控制信号 ${sig.toUpperCase()}`, 'info');
         setTimeout(() => loadTmuxPane(), 350);
       } catch (err) {
         showToast('发送信号失败: ' + err.message, 'error');
+      }
+    }
+
+    function promptNewTmuxWindow(sessionName) {
+      newTmuxWindowForm.value = {
+        session: sessionName || activeTmuxSession.value || (state.value.sessions?.tmux?.[0]?.name || 'cc'),
+        name: 'shell',
+        path: '',
+      };
+      showNewTmuxWindowModal.value = true;
+    }
+
+    async function executeCreateTmuxWindow() {
+      if (!newTmuxWindowForm.value.session) {
+        showToast('请选择目标会话', 'warning');
+        return;
+      }
+      creatingTmuxWindow.value = true;
+      try {
+        await api('/api/tmux/window/create', {
+          method: 'POST',
+          body: newTmuxWindowForm.value,
+        });
+        showToast(`已在会话 "${newTmuxWindowForm.value.session}" 中新建窗口`, 'success');
+        showNewTmuxWindowModal.value = false;
+        await refreshSessions();
+        const s = (state.value.sessions?.tmux || []).find(x => x.name === newTmuxWindowForm.value.session);
+        if (s && s.windows?.length) {
+          const lastWin = s.windows[s.windows.length - 1];
+          activeTmuxSession.value = s.name;
+          activeTmuxTarget.value = lastWin.target;
+        }
+        if (showTmuxModal.value) loadTmuxPane();
+      } catch (err) {
+        showToast('新建窗口失败: ' + err.message, 'error');
+      } finally {
+        creatingTmuxWindow.value = false;
+      }
+    }
+
+    function promptKillTmuxWindow(target, name) {
+      windowToKill.value = { target, name: name || target };
+      showKillTmuxWindowModal.value = true;
+    }
+
+    async function executeKillTmuxWindow() {
+      if (!windowToKill.value) return;
+      killingTmuxWindow.value = true;
+      try {
+        await api('/api/tmux/window/kill', {
+          method: 'POST',
+          body: { target: windowToKill.value.target }
+        });
+        showToast(`已关闭 Tmux 窗口: ${windowToKill.value.target}`, 'success');
+        showKillTmuxWindowModal.value = false;
+        await refreshSessions();
+        if (activeTmuxTarget.value === windowToKill.value.target) {
+          const s = (state.value.sessions?.tmux || []).find(x => x.name === activeTmuxSession.value);
+          activeTmuxTarget.value = s?.windows?.[0]?.target || activeTmuxSession.value;
+        }
+        if (showTmuxModal.value) loadTmuxPane();
+      } catch (err) {
+        showToast('关闭窗口失败: ' + err.message, 'error');
+      } finally {
+        killingTmuxWindow.value = false;
+        windowToKill.value = null;
       }
     }
 
@@ -2373,6 +2492,22 @@ const app = createApp({
       copyText,
       showTmuxModal,
       activeTmuxSession,
+      activeTmuxTarget,
+      totalTmuxWindows,
+      totalIdleTmuxWindows,
+      currentSessionWindows,
+      switchTmuxSession,
+      switchTmuxWindow,
+      showNewTmuxWindowModal,
+      newTmuxWindowForm,
+      creatingTmuxWindow,
+      promptNewTmuxWindow,
+      executeCreateTmuxWindow,
+      showKillTmuxWindowModal,
+      windowToKill,
+      killingTmuxWindow,
+      promptKillTmuxWindow,
+      executeKillTmuxWindow,
       tmuxTerminalText,
       tmuxTerminalLines,
       tmuxLoadingPane,
