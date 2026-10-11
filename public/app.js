@@ -1459,6 +1459,89 @@ const app = createApp({
       }
     }
 
+    const cleaningIdleWindows = ref(false);
+
+    async function closeCurrentTmuxWindow() {
+      const target = activeTmuxTarget.value || activeTmuxSession.value;
+      if (!target) return;
+      if (!confirm(`确定要在网页直接关闭 Tmux 窗口 "${target}" 吗？`)) return;
+      try {
+        await api('/api/tmux/window/kill', {
+          method: 'POST',
+          body: { target }
+        });
+        showToast(`已直接关闭窗口: ${target}`, 'success');
+        await refreshSessions();
+        const sess = (state.value.sessions?.tmux || []).find(x => x.name === activeTmuxSession.value);
+        if (sess && sess.windows?.length) {
+          activeTmuxTarget.value = sess.windows[0].target;
+          loadTmuxPane();
+        } else {
+          closeTmuxConsole();
+        }
+      } catch (err) {
+        showToast('关闭窗口失败: ' + err.message, 'error');
+      }
+    }
+
+    async function closeCurrentTmuxSession() {
+      const sessName = activeTmuxSession.value;
+      if (!sessName) return;
+      if (!confirm(`确定要直接终止并销毁整个 Tmux 会话 "${sessName}" 吗？所有关联窗口都将被关闭。`)) return;
+      try {
+        await api('/api/system/sessions/kill-tmux', {
+          method: 'POST',
+          body: { name: sessName }
+        });
+        showToast(`已销毁 Tmux 会话: ${sessName}`, 'success');
+        closeTmuxConsole();
+        await refreshSessions();
+      } catch (err) {
+        showToast('关闭会话失败: ' + err.message, 'error');
+      }
+    }
+
+    async function killTmuxWindowDirect(target, name) {
+      if (!confirm(`确定要直接关闭窗口 "${name || target}" (${target}) 吗？`)) return;
+      try {
+        await api('/api/tmux/window/kill', {
+          method: 'POST',
+          body: { target }
+        });
+        showToast(`已关闭窗口: ${target}`, 'success');
+        await refreshSessions();
+        if (activeTmuxTarget.value === target) {
+          const s = (state.value.sessions?.tmux || []).find(x => x.name === activeTmuxSession.value);
+          activeTmuxTarget.value = s?.windows?.[0]?.target || activeTmuxSession.value;
+        }
+      } catch (err) {
+        showToast('关闭窗口失败: ' + err.message, 'error');
+      }
+    }
+
+    async function cleanAllIdleWindows() {
+      if (!confirm(`确定要一键清理关闭所有未使用的空闲终端窗口吗？`)) return;
+      cleaningIdleWindows.value = true;
+      try {
+        const res = await api('/api/tmux/clean-idle', { method: 'POST' });
+        showToast(`已安全清理 ${res.closedCount || 0} 个空闲待命窗口`, 'success');
+        await refreshSessions();
+        if (showTmuxModal.value) {
+          const sess = (state.value.sessions?.tmux || []).find(x => x.name === activeTmuxSession.value);
+          if (!sess || !sess.windows?.length) {
+            closeTmuxConsole();
+          } else {
+            activeTmuxTarget.value = sess.windows[0].target;
+            loadTmuxPane();
+          }
+        }
+      } catch (err) {
+        showToast('清理空闲窗口失败: ' + err.message, 'error');
+      } finally {
+        cleaningIdleWindows.value = false;
+      }
+    }
+
     async function killProcess(pid) {
       if (!confirm(`确定要终止 PID ${pid} 的进程吗？`)) return;
       try {
@@ -2508,6 +2591,11 @@ const app = createApp({
       killingTmuxWindow,
       promptKillTmuxWindow,
       executeKillTmuxWindow,
+      closeCurrentTmuxWindow,
+      closeCurrentTmuxSession,
+      killTmuxWindowDirect,
+      cleanAllIdleWindows,
+      cleaningIdleWindows,
       tmuxTerminalText,
       tmuxTerminalLines,
       tmuxLoadingPane,

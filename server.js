@@ -762,6 +762,9 @@ route('POST', '/api/tmux/window/create', async (req, res, body) => {
 route('POST', '/api/tmux/window/select', async (req, res, body) => {
   return sessions.selectTmuxWindow(body.target);
 });
+route('POST', '/api/tmux/clean-idle', async () => {
+  return sessions.cleanIdleTmuxWindows();
+});
 
 route('GET', '/api/backups', async () => ({ items: U.listBackups().slice(0, 200) }));
 route('GET', '/api/backups/:name', async (req, res, body, p) => {

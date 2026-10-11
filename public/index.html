@@ -3403,11 +3403,30 @@
 
             <!-- Section 1: Tmux Sessions -->
             <div>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <label class="form-label" style="margin-bottom: 0;">
-                  Tmux 活跃会话 ({{ state.sessions?.tmux?.length || 0 }})
-                </label>
-                <span style="font-size: 11px; color: var(--ink-muted);">在终端输入 <code>tmux a -t &lt;name&gt;</code> 附着会话</span>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label class="form-label" style="margin-bottom: 0;">
+                    Tmux 活跃会话 ({{ state.sessions?.tmux?.length || 0 }}) · {{ totalTmuxWindows }} 窗口
+                  </label>
+                  <span v-if="totalIdleTmuxWindows" class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--ink-muted); font-size: 11px;">
+                    {{ totalIdleTmuxWindows }} 空闲待命
+                  </span>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <button
+                    v-if="totalIdleTmuxWindows > 0"
+                    type="button"
+                    @click="cleanAllIdleWindows"
+                    class="btn btn-secondary btn-sm"
+                    :disabled="cleaningIdleWindows"
+                    style="font-size: 11px; padding: 2px 10px; min-height: 28px; color: var(--accent); border-color: rgba(16, 185, 129, 0.3);"
+                    title="一键关闭所有未运行任务的 Shell 空闲窗口"
+                  >
+                    🧹 一键关闭所有空闲窗口 ({{ totalIdleTmuxWindows }})
+                  </button>
+                  <span style="font-size: 11px; color: var(--ink-muted);">在终端输入 <code>tmux a -t &lt;name&gt;</code> 附着会话</span>
+                </div>
               </div>
 
               <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -3441,7 +3460,7 @@
                       <button type="button" @click="copyText(s.attach_cmd)" class="btn btn-ghost btn-sm" style="font-size: 11px; padding: 3px 8px; min-height: 28px;" title="复制附着命令">
                         📋 复制 attach
                       </button>
-                      <button type="button" @click="killTmux(s.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 11px; padding: 3px 8px; min-height: 28px;" title="关闭此 Tmux 会话">
+                      <button type="button" @click="killTmux(s.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 11px; padding: 3px 8px; min-height: 28px;" title="在网页直接关闭并销毁此 Tmux 会话">
                         关闭会话
                       </button>
                     </div>
@@ -3487,7 +3506,7 @@
                         <button type="button" @click="copyText(w.attach_cmd)" class="btn btn-ghost btn-sm" style="font-size: 10px; padding: 2px 6px; min-height: 24px;" title="复制附着到此窗口的命令">
                           📋 附着命令
                         </button>
-                        <button type="button" @click="promptKillTmuxWindow(w.target, w.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 10px; padding: 2px 6px; min-height: 24px;" title="关闭此窗口">
+                        <button type="button" @click="killTmuxWindowDirect(w.target, w.name)" class="btn btn-ghost btn-sm" style="color: var(--danger); font-size: 10px; padding: 2px 6px; min-height: 24px;" title="在网页直接关闭并销毁此窗口">
                           ✕ 关闭窗口
                         </button>
                       </div>
@@ -3620,19 +3639,27 @@
               <span v-if="!currentSessionWindows.length" style="font-size: 11px; color: var(--ink-muted);">当前会话无窗口</span>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap;">
               <button type="button" @click="promptNewTmuxWindow(activeTmuxSession)" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px; min-height: 26px;" title="在此会话中新建一个终端窗口">
                 + 新建窗口
               </button>
               <button
-                v-if="currentSessionWindows.length > 1"
                 type="button"
-                @click="promptKillTmuxWindow(activeTmuxTarget, (currentSessionWindows.find(x => x.target === activeTmuxTarget)?.name))"
+                @click="closeCurrentTmuxWindow"
                 class="btn btn-ghost btn-sm"
-                style="color: var(--danger); font-size: 11px; padding: 2px 6px; min-height: 26px;"
-                title="关闭当前查看的窗口"
+                style="color: var(--danger); font-size: 11px; padding: 2px 8px; min-height: 26px; border: 1px solid rgba(239, 68, 68, 0.25);"
+                title="在网页直接关闭当前查看的这个 Tmux 窗口"
               >
-                ✕ 关闭此窗
+                ✕ 关闭此窗口
+              </button>
+              <button
+                type="button"
+                @click="closeCurrentTmuxSession"
+                class="btn btn-ghost btn-sm"
+                style="color: var(--danger); font-size: 11px; padding: 2px 8px; min-height: 26px;"
+                title="在网页彻底终止并关闭整个 Tmux 会话"
+              >
+                🛑 关闭整个会话
               </button>
             </div>
           </div>
@@ -3650,6 +3677,12 @@
                 <span style="font-size: 11px; color: var(--ink-muted);">控制信号:</span>
                 <button type="button" @click="sendTmuxSignal('ctrl-c')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px; color: var(--danger); border-color: rgba(224,96,85,0.3);">
                   ^C (中止)
+                </button>
+                <button type="button" @click="sendTmuxSignal('ctrl-d')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px;" title="向当前窗口发送 EOF / 退出 Shell">
+                  ^D (退出)
+                </button>
+                <button type="button" @click="sendTmuxCommand('exit')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px; color: var(--danger);" title="向当前窗口发送 exit 退出指令">
+                  exit
                 </button>
                 <button type="button" @click="sendTmuxSignal('enter')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px;">
                   ⏎ 回车
