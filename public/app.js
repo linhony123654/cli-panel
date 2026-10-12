@@ -926,7 +926,7 @@ const app = createApp({
 
     async function viewBackup(b) {
       try {
-        const res = await api(`/api/backups/${b.name}`);
+        const res = await api(`/api/backups/${encodeURIComponent(b.name)}`);
         backupDetail.value = {
           name: b.name,
           time: b.time,
@@ -943,13 +943,85 @@ const app = createApp({
     async function restoreBackup(name) {
       if (!confirm(`确定要从备份 ${name} 回滚恢复文件吗？当前目标文件也将先自动备份`)) return;
       try {
-        const res = await api(`/api/backups/${name}/restore`, { method: 'POST' });
+        const res = await api(`/api/backups/${encodeURIComponent(name)}/restore`, { method: 'POST' });
         showToast(`文件 ${res.target} 已成功回滚恢复！`, 'success');
         showBackupModal.value = false;
         await loadState();
         await loadBackups();
       } catch (err) {
         showToast(err.message, 'error');
+      }
+    }
+
+    // ------------------------------------------------------------- Full System Export & Import
+    const exportingBundle = ref(false);
+    const showImportModal = ref(false);
+    const importBundleText = ref('');
+    const importingBundle = ref(false);
+
+    async function downloadFullExport() {
+      exportingBundle.value = true;
+      try {
+        const res = await api('/api/system/export');
+        const str = JSON.stringify(res, null, 2);
+        const blob = new Blob([str], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10) + '-' + now.toTimeString().slice(0, 5).replace(':', '');
+        a.href = url;
+        a.download = `cli-panel-snapshot-${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('全量配置快照已成功导出并下载', 'success');
+      } catch (err) {
+        showToast('导出配置失败: ' + err.message, 'error');
+      } finally {
+        exportingBundle.value = false;
+      }
+    }
+
+    function onImportFileSelected(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        importBundleText.value = String(evt.target?.result || '');
+      };
+      reader.readAsText(file);
+    }
+
+    async function executeImportBundle() {
+      if (!importBundleText.value.trim()) {
+        showToast('请选择配置文件或粘贴快照 JSON 内容', 'warning');
+        return;
+      }
+      let parsed = null;
+      try {
+        parsed = JSON.parse(importBundleText.value.trim());
+      } catch (e) {
+        showToast('JSON 格式解析失败: ' + e.message, 'error');
+        return;
+      }
+      if (!confirm('确定要将该快照配置恢复导入至当前 VPS 吗？已存在项将被更新覆盖')) return;
+      importingBundle.value = true;
+      try {
+        const res = await api('/api/system/import', {
+          method: 'POST',
+          body: parsed
+        });
+        const c = res.counts || {};
+        showToast(`导入成功！恢复: ${c.providers || 0} 个供应商, ${c.launchers || 0} 个启动器, ${c.profiles || 0} 个Profile, ${c.skills || 0} 个技能`, 'success');
+        showImportModal.value = false;
+        importBundleText.value = '';
+        await loadState();
+        await loadBackups();
+      } catch (err) {
+        showToast('导入失败: ' + err.message, 'error');
+      } finally {
+        importingBundle.value = false;
       }
     }
 
@@ -1210,6 +1282,34 @@ const app = createApp({
           latency_ms: 0
         };
         showToast('测活网络异常: ' + err.message, 'error');
+      }
+    }
+
+    const pingingAll = ref(false);
+    async function pingAllProviders() {
+      if (pingingAll.value) return;
+      pingingAll.value = true;
+      try {
+        const res = await api('/api/providers/ping-all', { method: 'POST' });
+        if (res.results) {
+          for (const [k, v] of Object.entries(res.results)) {
+            pingStatus.value[k] = {
+              loading: false,
+              ok: v.ok,
+              latency_ms: v.latency_ms,
+              status: v.status,
+              error: v.error,
+              model: v.model
+            };
+          }
+          const okCount = Object.values(res.results).filter(x => x.ok).length;
+          const total = Object.values(res.results).length;
+          showToast(`完成全量测活: ${okCount}/${total} 个供应商正常`, okCount === total ? 'success' : 'warning');
+        }
+      } catch (err) {
+        showToast('全量测活失败: ' + err.message, 'error');
+      } finally {
+        pingingAll.value = false;
       }
     }
 
@@ -1498,6 +1598,36 @@ const app = createApp({
         await refreshSessions();
       } catch (err) {
         showToast('关闭会话失败: ' + err.message, 'error');
+      }
+    }
+
+    async function promptNewTmuxSession() {
+      const name = prompt('请输入新 Tmux 会话名称 (如 work / agent / dev):', 'work');
+      if (!name || !name.trim()) return;
+      try {
+        await api('/api/tmux/session/create', {
+          method: 'POST',
+          body: { name: name.trim() }
+        });
+        showToast(`已成功创建 Tmux 会话: ${name.trim()}`, 'success');
+        await refreshSessions();
+      } catch (err) {
+        showToast('创建会话失败: ' + err.message, 'error');
+      }
+    }
+
+    async function broadcastTmuxPrompt() {
+      const cmd = prompt('向当前所有终端窗口广播指令或 Prompt (例如 /compact 或 /clear):', '/compact');
+      if (!cmd || !cmd.trim()) return;
+      try {
+        const res = await api('/api/tmux/broadcast', {
+          method: 'POST',
+          body: { text: cmd.trim() }
+        });
+        showToast(`已向 ${res.count} 个终端窗口广播指令: ${cmd.trim()}`, 'success');
+        if (showTmuxModal.value) await loadTmuxPane();
+      } catch (err) {
+        showToast('广播指令失败: ' + err.message, 'error');
       }
     }
 
@@ -2304,6 +2434,86 @@ const app = createApp({
     const loadingLargeDirs = ref(false);
     const expandedJunkCatId = ref(null);
 
+    // ------------------------------------------------------------- Global Spotlight Command Palette (Ctrl+K)
+    const showPalette = ref(false);
+    const paletteQuery = ref('');
+    const paletteSelectedIndex = ref(0);
+
+    const ALL_PALETTE_ITEMS = [
+      { id: 'nav_claude', group: '功能面板跳转', title: 'Claude Code 启动器与参数', icon: '🚀', action: () => { currentTab.value = 'claude'; } },
+      { id: 'nav_codex', group: '功能面板跳转', title: 'Codex CLI Profiles 配置', icon: '⚡', action: () => { currentTab.value = 'codex'; } },
+      { id: 'nav_prov', group: '功能面板跳转', title: '供应商与多模型路由库', icon: '🌐', action: () => { currentTab.value = 'providers'; } },
+      { id: 'nav_skills', group: '功能面板跳转', title: '跨客户端 Skills 技能管理', icon: '📦', action: () => { currentTab.value = 'skills'; } },
+      { id: 'nav_mcp', group: '功能面板跳转', title: 'MCP 扩展服务中心', icon: '🔌', action: () => { currentTab.value = 'mcp'; } },
+      { id: 'nav_git', group: '功能面板跳转', title: 'Git 仓库状态与代码 Diff', icon: '🔍', action: () => { currentTab.value = 'git'; loadGitRepos(); } },
+      { id: 'nav_usage', group: '功能面板跳转', title: '会话历史与 Token 审计', icon: '📊', action: () => { currentTab.value = 'usage'; loadUsage(); } },
+      { id: 'nav_cleaner', group: '功能面板跳转', title: '手机管家式磁盘清理', icon: '🧹', action: () => { currentTab.value = 'cleaner'; scanJunk(); } },
+      { id: 'nav_memory', group: '功能面板跳转', title: '记忆库与项目协作准则', icon: '🧠', action: () => { currentTab.value = 'memory'; loadMemory(); } },
+      { id: 'nav_doctor', group: '功能面板跳转', title: '系统环境全面自检 (Doctor)', icon: '🩺', action: () => { currentTab.value = 'doctor'; loadDoctor(); } },
+      { id: 'nav_logs', group: '功能面板跳转', title: 'CLI 历史 Prompt 与终端日志', icon: '📋', action: () => { currentTab.value = 'logs'; refreshLogs(); } },
+      { id: 'nav_backups', group: '功能面板跳转', title: '配置快照历史与全量导出', icon: '💾', action: () => { currentTab.value = 'backups'; loadBackups(); } },
+      // Quick Actions
+      { id: 'act_ping_all', group: '快捷动作指令', title: '⚡ 一键测活全部供应商端点', icon: '⚡', action: () => { pingAllProviders(); } },
+      { id: 'act_tmux_console', group: '快捷动作指令', title: '📺 打开 Tmux 实时终端监视', icon: '📺', action: () => { openTmuxConsole(); } },
+      { id: 'act_tmux_clean', group: '快捷动作指令', title: '🛑 一键关闭所有空闲 Tmux 窗口', icon: '🛑', action: () => { cleanAllIdleWindows(); } },
+      { id: 'act_clean_empty', group: '快捷动作指令', title: '🧹 清理 0 Token 空白异常会话', icon: '🧹', action: () => { currentTab.value = 'usage'; executeCleanEmptySessions(); } },
+      { id: 'act_export_all', group: '快捷动作指令', title: '💾 导出全量环境配置快照 (JSON)', icon: '💾', action: () => { downloadFullExport(); } },
+      { id: 'act_broadcast', group: '快捷动作指令', title: '📢 向所有终端广播指令 (/compact)', icon: '📢', action: () => { broadcastTmuxPrompt(); } },
+      { id: 'act_refresh_git', group: '快捷动作指令', title: '🔄 刷新所有 Git 仓库状态', icon: '🔄', action: () => { currentTab.value = 'git'; loadGitRepos(); } },
+    ];
+
+    const filteredPaletteItems = computed(() => {
+      const q = paletteQuery.value.trim().toLowerCase();
+      if (!q) return ALL_PALETTE_ITEMS;
+      return ALL_PALETTE_ITEMS.filter(item =>
+        item.title.toLowerCase().includes(q) ||
+        item.group.toLowerCase().includes(q)
+      );
+    });
+
+    function selectPaletteItem(item) {
+      if (!item) return;
+      showPalette.value = false;
+      item.action();
+    }
+
+    function onGlobalKeyDown(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        showPalette.value = !showPalette.value;
+        if (showPalette.value) {
+          paletteQuery.value = '';
+          paletteSelectedIndex.value = 0;
+        }
+      } else if (e.key === 'Escape' && showPalette.value) {
+        showPalette.value = false;
+      }
+    }
+
+    // Token Breakdown & Efficiency Computation
+    const tokenMetrics = computed(() => {
+      const t = usageSummary.value?.totals || {};
+      const grand = t.grand_total_tokens || 0;
+      const input = t.input_tokens || 0;
+      const output = t.output_tokens || 0;
+      const cache = t.cache_read_tokens || 0;
+      if (grand <= 0) {
+        return { promptPct: 0, outputPct: 0, cachePct: 0, cacheHitRate: '0.0%' };
+      }
+      const promptPct = ((input / grand) * 100).toFixed(1);
+      const outputPct = ((output / grand) * 100).toFixed(1);
+      const cachePct = ((cache / grand) * 100).toFixed(1);
+      const totalPrompt = input + cache;
+      const cacheHitRate = totalPrompt > 0 ? ((cache / totalPrompt) * 100).toFixed(1) + '%' : '0.0%';
+      return { promptPct, outputPct, cachePct, cacheHitRate };
+    });
+
+    // Tmux CRT Fullscreen & Font Scaler
+    const tmuxIsFullscreen = ref(false);
+    const tmuxFontSize = ref(12);
+    function toggleTmuxFullscreen() { tmuxIsFullscreen.value = !tmuxIsFullscreen.value; }
+    function zoomTmuxFont(delta) { tmuxFontSize.value = Math.min(18, Math.max(10, tmuxFontSize.value + delta)); }
+
     async function scanJunk(quiet = false) {
       cleanerScanning.value = true;
       try {
@@ -2425,9 +2635,24 @@ const app = createApp({
 
     onMounted(() => {
       checkAuth();
+      window.addEventListener('keydown', onGlobalKeyDown);
+    });
+    onUnmounted(() => {
+      window.removeEventListener('keydown', onGlobalKeyDown);
     });
 
     return {
+      // Spotlight Command Palette
+      showPalette,
+      paletteQuery,
+      paletteSelectedIndex,
+      filteredPaletteItems,
+      selectPaletteItem,
+      tokenMetrics,
+      tmuxIsFullscreen,
+      tmuxFontSize,
+      toggleTmuxFullscreen,
+      zoomTmuxFont,
       authed,
       checkingAuth,
       loginPassword,
@@ -2530,6 +2755,13 @@ const app = createApp({
       loadBackups,
       viewBackup,
       restoreBackup,
+      exportingBundle,
+      downloadFullExport,
+      showImportModal,
+      importBundleText,
+      importingBundle,
+      onImportFileSelected,
+      executeImportBundle,
       // Select Options
       claudeAliasOptions,
       providerSelectOptions,
@@ -2562,6 +2794,8 @@ const app = createApp({
       // 1. Ping Health Check
       pingStatus,
       pingTarget,
+      pingingAll,
+      pingAllProviders,
       // Hardware Resource HUD
       systemHud,
       loadingHud,
@@ -2593,6 +2827,8 @@ const app = createApp({
       executeKillTmuxWindow,
       closeCurrentTmuxWindow,
       closeCurrentTmuxSession,
+      promptNewTmuxSession,
+      broadcastTmuxPrompt,
       killTmuxWindowDirect,
       cleanAllIdleWindows,
       cleaningIdleWindows,

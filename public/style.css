@@ -680,6 +680,17 @@ main.main-content {
   font-size: 12px;
 }
 
+.btn-xs {
+  padding: 2px 7px;
+  min-height: 26px !important;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.mobile-only {
+  display: none !important;
+}
+
 /* Forms & Inputs */
 .form-grid-2 {
   display: grid;
@@ -1372,8 +1383,12 @@ main.main-content {
   .desktop-hud-group {
     display: none !important;
   }
+  .desktop-only,
   .desktop-only-badge {
     display: none !important;
+  }
+  .mobile-only {
+    display: inline-flex !important;
   }
   .navbar {
     padding: 0 12px;
@@ -1965,9 +1980,160 @@ tbody tr:hover {
     display: none;
   }
   .tmux-terminal-screen {
-    height: 300px;
-    max-height: 45vh;
+    height: 280px;
+    max-height: 40vh;
   }
+}
+
+/* ============================================================
+   Tmux Live Console Refined Responsive Styles
+   ============================================================ */
+.tmux-modal-dialog {
+  width: min(960px, 96vw);
+  max-height: 92vh;
+}
+
+.tmux-head-bar {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tmux-win-strip {
+  padding: 6px 12px;
+  background: rgba(10, 16, 13, 0.95);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tmux-win-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.tmux-win-list::-webkit-scrollbar { display: none; }
+
+.tmux-win-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  min-height: 28px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tmux-win-pill:hover {
+  border-color: var(--accent);
+  color: var(--ink-base);
+}
+.tmux-win-pill.active {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.tmux-win-pill .win-tag {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.tmux-win-pill.active .win-tag {
+  background: rgba(16, 185, 129, 0.25);
+  color: var(--accent);
+}
+
+.tmux-win-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  font-size: 11px;
+  min-height: 28px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.tmux-win-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tmux-win-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tmux-signals-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tmux-signals-list {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.tmux-signals-list::-webkit-scrollbar { display: none; }
+
+.tmux-quick-prompts-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 2px 0;
+  border-top: 1px solid var(--line);
+}
+.tmux-quick-prompts-strip::-webkit-scrollbar { display: none; }
+
+.tmux-quick-prompt-chip {
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--accent);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--r-pill);
+  transition: all 0.15s ease;
+}
+.tmux-quick-prompt-chip:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: var(--accent);
 }
 
 /* ============================================================
@@ -2083,5 +2249,162 @@ tbody tr:hover {
   background: rgba(0, 0, 0, 0.3);
   border-radius: var(--r-box);
   border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================================
+   Command Palette Spotlight (Ctrl+K)
+   ============================================================ */
+.spotlight-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 6, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 20px 16px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.spotlight-dialog {
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-card);
+  width: min(640px, 96vw);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(59, 192, 142, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalSpringIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spotlight-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev-2);
+}
+
+.spotlight-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: var(--ink);
+  font-family: inherit;
+}
+.spotlight-input::placeholder {
+  color: var(--ink-muted);
+}
+
+.spotlight-body {
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.spotlight-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 12px 4px 12px;
+}
+
+.spotlight-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--r-box);
+  cursor: pointer;
+  color: var(--ink-2);
+  transition: all 0.12s ease;
+  font-size: 13px;
+}
+.spotlight-item:hover,
+.spotlight-item.is-selected {
+  background: rgba(59, 192, 142, 0.12);
+  color: var(--ink);
+}
+.spotlight-item.is-selected .spotlight-item-title {
+  color: var(--accent);
+}
+
+.spotlight-foot {
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+/* ============================================================
+   Token Analytics Distribution Bar & Breakdown
+   ============================================================ */
+.token-dist-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line);
+  margin: 10px 0;
+}
+.token-dist-seg {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+.token-dist-seg.seg-prompt { background: #60a5fa; }
+.token-dist-seg.seg-output { background: #34d399; }
+.token-dist-seg.seg-cache { background: var(--gold); }
+
+.token-model-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.token-model-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+  border-radius: var(--r-pill);
+  transition: width 0.3s ease;
+}
+
+/* ============================================================
+   Tmux Console Fullscreen & Font Adjuster
+   ============================================================ */
+.tmux-modal-dialog.is-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  max-width: 100vw !important;
+  border-radius: 0 !important;
+  z-index: 1150 !important;
+}
+.tmux-modal-dialog.is-fullscreen .modal-body {
+  flex: 1 1 100% !important;
+  min-height: 0 !important;
+}
+.tmux-modal-dialog.is-fullscreen .tmux-terminal-screen {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: none !important;
 }
 

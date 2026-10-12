@@ -19,6 +19,7 @@ const doctor = require('./lib/doctor');
 const system = require('./lib/system');
 const logs = require('./lib/logs');
 const cleaner = require('./lib/cleaner');
+const backupBundle = require('./lib/backup_bundle');
 
 const PORT = Number(process.env.PORT || 9099);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -569,6 +570,28 @@ route('GET', '/api/state', async () => fullState());
 route('POST', '/api/providers', async (req, res, body) => saveProvider(body));
 route('DELETE', '/api/providers/:id', async (req, res, body, p) => deleteProvider(p.id));
 route('POST', '/api/providers/:id/fetch-models', async (req, res, body, p) => fetchModels(p.id));
+route('POST', '/api/providers/ping-all', async () => {
+  const providers = store.get().providers || [];
+  const results = {};
+  await Promise.all(providers.map(async p => {
+    try {
+      const k = store.readKey(p.id);
+      const isAnthropic = !!p.anthropic_url;
+      const baseUrl = p.anthropic_url || p.openai_url;
+      const model = p.models?.[0]?.id || (isAnthropic ? 'claude-3-haiku-20240307' : 'gpt-4o-mini');
+      const r = await ping.pingEndpoint({
+        type: isAnthropic ? 'anthropic' : 'openai',
+        baseUrl,
+        apiKey: k,
+        model
+      });
+      results['prov_' + p.id] = { ...r, provider_id: p.id, name: p.name };
+    } catch (e) {
+      results['prov_' + p.id] = { ok: false, error: e.message, status: 500, provider_id: p.id, name: p.name };
+    }
+  }));
+  return { ok: true, results };
+});
 
 route('POST', '/api/claude/launchers', async (req, res, body) => saveLauncher(body));
 route('DELETE', '/api/launchers/:cmd', async (req, res, body, p) => deleteLauncher(p.cmd));
@@ -764,6 +787,19 @@ route('POST', '/api/tmux/window/select', async (req, res, body) => {
 });
 route('POST', '/api/tmux/clean-idle', async () => {
   return sessions.cleanIdleTmuxWindows();
+});
+route('POST', '/api/tmux/session/create', async (req, res, body) => {
+  return sessions.createTmuxSession(body.name, body.dir, body.command);
+});
+route('POST', '/api/tmux/broadcast', async (req, res, body) => {
+  return sessions.broadcastTmux(body.text, { signal: body.signal, session: body.session });
+});
+
+route('GET', '/api/system/export', async () => {
+  return backupBundle.exportBundle();
+});
+route('POST', '/api/system/import', async (req, res, body) => {
+  return backupBundle.importBundle(body);
 });
 
 route('GET', '/api/backups', async () => ({ items: U.listBackups().slice(0, 200) }));

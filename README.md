@@ -36,6 +36,9 @@
 - **🧠 记忆库与项目准则沉淀 (Memory & Rules)**
   - 统一查看与编辑持久化长期记忆（Memory）及自动维护的 `MEMORY.md` 索引。
   - 各项目 `CLAUDE.md` / `AGENTS.md` 工程规范在线对账。
+- **💾 全量配置包导出与迁移 (Config Bundle Export / Import)**
+  - 一键打包供应商与密钥、Claude 启动器（含手写脚本原文）、Codex Profiles、Skills 与项目规则为单个 JSON。
+  - 导入时逐类回报成功数与**跳过明细**（缺供应商、规则文件不存在等），不再静默失败。
 - **🩺 系统环境自检与修复 (Doctor)**
   - 自动化检查 Node.js、Go 编译器、Python 环境、Tmux 终端、网络代理连通性并提供一键修复指令。
 
@@ -66,7 +69,7 @@ npm install
 node server.js
 ```
 
-默认监听端口为 `9099`（可通过环境变量 `PORT=9099 HOST=0.0.0.0` 调整）。
+默认监听端口为 `9099`（可通过环境变量 `PORT=9099 HOST=0.0.0.0` 调整，`CLI_PANEL_DATA=<dir>` 可重定位运行时数据目录）。
 初次启动将自动在本地创建 `data/` 目录，并在终端与 `data/INITIAL_PASSWORD.txt` 输出一次性安全随机密码。
 
 ### 3. 使用 PM2 保持常驻（推荐）

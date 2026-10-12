@@ -148,6 +148,22 @@
         </div>
 
         <div class="nav-right">
+          <!-- Spotlight Command Palette Trigger -->
+          <button
+            type="button"
+            @click="showPalette = true; paletteQuery = '';"
+            class="btn btn-ghost btn-sm font-mono"
+            style="border: 1px solid var(--line); border-radius: var(--r-pill); display: flex; align-items: center; gap: 6px; padding: 2px 9px;"
+            title="全局指令搜索与快速跳转 (Ctrl+K)"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span class="desktop-only" style="font-size: 11px;">全局指令</span>
+            <span class="desktop-only" style="font-size: 10px; opacity: 0.65; background: rgba(255,255,255,0.08); padding: 0 4px; border-radius: 3px;">⌘K</span>
+          </button>
+
           <!-- Tmux Live Console Launcher -->
           <button
             type="button"
@@ -1107,6 +1123,19 @@
               <p class="section-desc">管理上游中转与官方 API，密钥以 0600 权限单独保存在 ~/.config/cli-panel/keys/，页面严格脱敏显示</p>
             </div>
             <div class="section-actions">
+              <button
+                @click="pingAllProviders"
+                class="btn btn-secondary btn-sm"
+                :disabled="pingingAll"
+                title="并发向所有已配置的供应商发送探针测试连通性与延迟"
+              >
+                <svg v-if="pingingAll" class="spin-anim" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+                  <path d="M12 2a10 10 0 0 1 10 10"/>
+                </svg>
+                <span v-else>⚡</span>
+                <span>{{ pingingAll ? '全部测活中...' : '全部测活' }}</span>
+              </button>
               <button @click="openAddProvider" class="btn btn-primary btn-sm">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 <span>添加供应商</span>
@@ -1303,7 +1332,7 @@
                 <span class="badge">{{ state.mcp?.length || 0 }}</span>
               </h2>
               <p class="section-desc">
-                管理配置于 <code>~/.claude/settings.json</code> 中的 MCP 工具服务（支持网页抓取、数据库、脚本调用与本地插件）
+                管理配置于 Claude Code (<code>~/.claude.json</code>) 与 Codex CLI (<code>~/.codex/config.toml</code>) 中的 MCP 工具服务（支持网页抓取、数据库、脚本调用与本地插件）
               </p>
             </div>
             <div class="section-actions">
@@ -1317,10 +1346,13 @@
           <div class="grid-cards" style="grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));">
             <div v-for="srv in (state.mcp || [])" :key="srv.id" class="glass-card" style="display: flex; flex-direction: column;">
               <div class="card-head">
-                <div class="card-title-box">
+                <div class="card-title-box" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                   <div class="card-title">
                     {{ srv.id }}
                   </div>
+                  <span class="badge" :class="srv.client === 'Codex CLI' ? 'badge-gold' : 'badge-accent'" style="font-size: 10px;">
+                    {{ srv.client || 'Claude Code' }}
+                  </span>
                 </div>
                 <div>
                   <button
@@ -1381,6 +1413,33 @@
               <p class="section-desc">每次通过控制面板修改任何文件（脚本、config.toml、settings.json、Profile）均会自动生成备份，随时支持一键对比与回滚</p>
             </div>
             <div class="section-actions">
+              <button
+                @click="downloadFullExport"
+                class="btn btn-secondary btn-sm"
+                :disabled="exportingBundle"
+                title="导出全量配置包（供应商、密钥、启动器、Profile、Skills与规则），可随时跨 VPS 一键还原"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>{{ exportingBundle ? '导出中...' : '导出全量配置包' }}</span>
+              </button>
+
+              <button
+                @click="showImportModal = true"
+                class="btn btn-primary btn-sm"
+                title="导入已有的配置包 JSON 并批量恢复环境"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span>导入配置包恢复</span>
+              </button>
+
               <button @click="loadBackups" class="btn btn-secondary btn-sm">
                 <span>刷新列表</span>
               </button>
@@ -1612,11 +1671,48 @@
             </div>
           </div>
 
-          <!-- Top Models Filter Pills -->
-          <div class="glass-card" style="padding: 14px; margin-bottom: 16px; flex-direction: row; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <span style="font-size: 12px; color: var(--ink-muted);">Top 活跃模型:</span>
-            <div v-for="m in (usageSummary.top_models || [])" :key="m.model" class="badge font-mono" style="font-size: 11px; padding: 3px 8px; background: rgba(59, 192, 142, 0.1); color: var(--accent);">
-              <strong>{{ m.model }}</strong> · {{ m.formatted }} Tokens
+          <!-- Visual Token Breakdown & Cache Savings Bar -->
+          <div class="glass-card" style="padding: 14px 18px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 13px; font-weight: 700; color: var(--ink);">Token 构成与缓存效率</span>
+                <span class="badge badge-accent font-mono" style="font-size: 11px;">
+                  🔥 Prompt Caching 命中率: {{ tokenMetrics.cacheHitRate }}
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; font-size: 11px;" class="font-mono">
+                <span style="color: #60a5fa;">● Prompt: {{ tokenMetrics.promptPct }}%</span>
+                <span style="color: #34d399;">● Output: {{ tokenMetrics.outputPct }}%</span>
+                <span style="color: var(--gold);">● Cache 节省: {{ tokenMetrics.cachePct }}%</span>
+              </div>
+            </div>
+
+            <!-- Multi-segment Stacked Distribution Bar -->
+            <div class="token-dist-bar">
+              <div class="token-dist-seg seg-prompt" :style="{ width: tokenMetrics.promptPct + '%' }" :title="'Prompt 输入: ' + tokenMetrics.promptPct + '%'"></div>
+              <div class="token-dist-seg seg-output" :style="{ width: tokenMetrics.outputPct + '%' }" :title="'Output 输出: ' + tokenMetrics.outputPct + '%'"></div>
+              <div class="token-dist-seg seg-cache" :style="{ width: tokenMetrics.cachePct + '%' }" :title="'Cache 缓存命中: ' + tokenMetrics.cachePct + '%'"></div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ink-muted); margin-top: 4px;">
+              <span>总处理算力: <strong class="font-mono" style="color: var(--ink);">{{ usageSummary.totals?.formatted_grand || '0' }}</strong> Tokens</span>
+              <span>累计节省读取: <strong class="font-mono" style="color: var(--gold);">{{ usageSummary.totals?.formatted_cache || '0' }}</strong> Tokens</span>
+            </div>
+          </div>
+
+          <!-- Top Models Filter Pills & Share Bar -->
+          <div class="glass-card" style="padding: 14px 18px; margin-bottom: 16px;">
+            <div style="font-size: 12px; color: var(--ink-muted); margin-bottom: 8px; font-weight: 600;">Top 活跃模型算力分布:</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+              <div v-for="m in (usageSummary.top_models || [])" :key="m.model" style="background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: var(--r-box); padding: 8px 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 4px;" class="font-mono">
+                  <strong style="color: var(--ink);">{{ m.model }}</strong>
+                  <span style="color: var(--accent);">{{ m.formatted }}</span>
+                </div>
+                <div class="token-model-bar-track">
+                  <div class="token-model-bar-fill" :style="{ width: Math.min(100, (m.tokens / (usageSummary.totals?.grand_total_tokens || 1)) * 100).toFixed(1) + '%' }"></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -3566,139 +3662,182 @@
 
       <!-- Tmux Live Terminal & Dispatcher Modal -->
       <div v-if="showTmuxModal" class="modal-backdrop" @click.self="closeTmuxConsole">
-        <div class="modal-dialog" style="width: min(960px, 96vw); max-height: 92vh; display: flex; flex-direction: column;">
+        <div class="modal-dialog tmux-modal-dialog" :class="{ 'is-fullscreen': tmuxIsFullscreen }">
           <!-- Modal Head -->
-          <div class="modal-head" style="padding: 12px 16px; border-bottom: 1px solid var(--line);">
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <span class="status-beacon" style="background: var(--accent); box-shadow: 0 0 8px var(--accent);"></span>
-              <h3 class="modal-title font-mono" style="font-size: 15px;">
-                Tmux 控制台: <span style="color: var(--accent);">{{ activeTmuxTarget || activeTmuxSession }}</span>
+          <div class="tmux-head-bar">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+              <span class="status-beacon" style="background: var(--accent); box-shadow: 0 0 8px var(--accent); flex-shrink: 0;"></span>
+              <h3 class="modal-title font-mono" style="font-size: 14px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                {{ activeTmuxTarget || activeTmuxSession }}
               </h3>
 
               <!-- Session Switcher Pills -->
-              <div style="display: flex; gap: 4px; margin-left: 8px;">
+              <div style="display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex-shrink: 1; align-items: center;">
                 <button
                   v-for="s in (state.sessions?.tmux || [])"
                   :key="s.name"
                   type="button"
                   @click="switchTmuxSession(s.name)"
-                  class="btn btn-sm font-mono"
+                  class="btn btn-xs font-mono"
                   :class="activeTmuxSession === s.name ? 'btn-primary' : 'btn-secondary'"
-                  style="font-size: 11px; padding: 2px 8px; min-height: 26px;"
+                  style="white-space: nowrap; flex-shrink: 0;"
                 >
                   {{ s.name }} ({{ s.windows?.length || s.windowCount }}窗)
+                </button>
+                <button
+                  type="button"
+                  @click="promptNewTmuxSession"
+                  class="btn btn-ghost btn-xs font-mono"
+                  title="新建一个独立的后台 Tmux 会话"
+                  style="border: 1px dashed var(--line); white-space: nowrap; flex-shrink: 0;"
+                >
+                  + 会话
+                </button>
+                <button
+                  type="button"
+                  @click="broadcastTmuxPrompt"
+                  class="btn btn-ghost btn-xs font-mono desktop-only"
+                  title="向所有终端窗口广播指令或 Prompt (例如 /compact)"
+                  style="border: 1px dashed var(--line); white-space: nowrap; flex-shrink: 0; color: var(--accent);"
+                >
+                  📢 广播
                 </button>
               </div>
             </div>
 
             <!-- Controls in Head -->
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
+              <!-- Font Scaler -->
+              <div class="desktop-only" style="display: flex; align-items: center; gap: 2px;">
+                <button type="button" @click="zoomTmuxFont(-1)" class="btn btn-ghost btn-xs font-mono" style="padding: 1px 5px; min-height: 24px;" title="缩小终端字号">A-</button>
+                <button type="button" @click="zoomTmuxFont(1)" class="btn btn-ghost btn-xs font-mono" style="padding: 1px 5px; min-height: 24px;" title="放大终端字号">A+</button>
+              </div>
+
+              <!-- Fullscreen Toggle -->
+              <button
+                type="button"
+                @click="toggleTmuxFullscreen"
+                class="btn btn-secondary btn-xs font-mono"
+                style="padding: 2px 7px; min-height: 26px;"
+                :title="tmuxIsFullscreen ? '退出全屏' : '全屏显示终端'"
+              >
+                {{ tmuxIsFullscreen ? '⛶ 还原' : '⛶ 全屏' }}
+              </button>
+
               <button
                 type="button"
                 @click="tmuxAutoPoll = !tmuxAutoPoll"
-                class="btn btn-secondary btn-sm"
-                style="font-size: 11px; padding: 3px 8px; min-height: 28px;"
+                class="btn btn-secondary btn-xs font-mono"
                 :title="tmuxAutoPoll ? '点击暂停自动刷新' : '点击开启每 2.5 秒刷新'"
               >
                 <span :style="{ color: tmuxAutoPoll ? 'var(--accent)' : 'var(--ink-muted)' }">●</span>
-                <span class="desktop-only">{{ tmuxAutoPoll ? '自动刷新 (2.5s)' : '已暂停' }}</span>
+                <span class="desktop-only" style="margin-left: 3px;">{{ tmuxAutoPoll ? '自动(2.5s)' : '已暂停' }}</span>
               </button>
               <button
                 type="button"
                 @click="loadTmuxPane"
-                class="btn btn-secondary btn-sm"
+                class="btn btn-secondary btn-xs"
                 :disabled="tmuxLoadingPane"
-                style="font-size: 11px; padding: 3px 8px; min-height: 28px;"
-                title="手动刷新终端输出"
+                style="font-size: 11px; padding: 2px 6px; min-height: 26px;"
+                title="手动刷新终端回显"
               >
                 <svg :class="{ 'spin-anim': tmuxLoadingPane }" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
                 </svg>
               </button>
-              <button @click="closeTmuxConsole" class="btn btn-ghost btn-sm" style="padding: 4px 8px;">✕</button>
+              <button @click="closeTmuxConsole" class="btn btn-ghost btn-xs" style="padding: 2px 7px; min-height: 26px; font-size: 14px;">✕</button>
             </div>
           </div>
 
           <!-- Window Tabs Bar -->
-          <div style="padding: 6px 14px; background: rgba(14, 22, 19, 0.95); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
-            <div style="display: flex; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none;">
-              <span style="font-size: 11px; color: var(--ink-muted); white-space: nowrap; flex-shrink: 0;">切换窗口:</span>
+          <div class="tmux-win-strip">
+            <!-- Scrollable Window Pills List -->
+            <div class="tmux-win-list">
               <button
                 v-for="w in currentSessionWindows"
                 :key="w.target"
                 type="button"
                 @click="switchTmuxWindow(w)"
-                class="btn btn-sm font-mono"
-                :class="(activeTmuxTarget === w.target || (!activeTmuxTarget && w.active)) ? 'btn-primary' : 'btn-secondary'"
-                style="font-size: 11px; padding: 3px 8px; min-height: 26px; white-space: nowrap; flex-shrink: 0;"
+                class="tmux-win-pill font-mono"
+                :class="{ active: (activeTmuxTarget === w.target || (!activeTmuxTarget && w.active)) }"
               >
                 <span>#{{ w.index }} {{ w.name }}</span>
-                <span v-if="w.is_idle" style="font-size: 10px; opacity: 0.7; margin-left: 4px;">(空闲)</span>
-                <span v-else style="font-size: 10px; color: var(--accent); margin-left: 4px;">({{ w.command }})</span>
+                <span v-if="w.is_idle" class="win-tag" style="opacity: 0.7;">空闲</span>
+                <span v-else class="win-tag" style="color: var(--accent);">{{ w.command }}</span>
               </button>
-              <span v-if="!currentSessionWindows.length" style="font-size: 11px; color: var(--ink-muted);">当前会话无窗口</span>
+              <span v-if="!currentSessionWindows.length" style="font-size: 11px; color: var(--ink-muted); white-space: nowrap;">暂无窗口</span>
+
+              <button
+                type="button"
+                @click="promptNewTmuxWindow(activeTmuxSession)"
+                class="tmux-win-add-btn font-mono"
+                title="在此会话中新建一个终端窗口"
+              >
+                + 窗口
+              </button>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap;">
-              <button type="button" @click="promptNewTmuxWindow(activeTmuxSession)" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px; min-height: 26px;" title="在此会话中新建一个终端窗口">
-                + 新建窗口
-              </button>
+            <!-- Danger / Close Actions -->
+            <div class="tmux-win-actions">
               <button
                 type="button"
                 @click="closeCurrentTmuxWindow"
-                class="btn btn-ghost btn-sm"
-                style="color: var(--danger); font-size: 11px; padding: 2px 8px; min-height: 26px; border: 1px solid rgba(239, 68, 68, 0.25);"
-                title="在网页直接关闭当前查看的这个 Tmux 窗口"
+                class="btn btn-ghost btn-xs font-mono"
+                style="color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.25); white-space: nowrap;"
+                title="在网页直接关闭当前窗口"
               >
-                ✕ 关闭此窗口
+                ✕ 关窗
               </button>
               <button
                 type="button"
                 @click="closeCurrentTmuxSession"
-                class="btn btn-ghost btn-sm"
-                style="color: var(--danger); font-size: 11px; padding: 2px 8px; min-height: 26px;"
-                title="在网页彻底终止并关闭整个 Tmux 会话"
+                class="btn btn-ghost btn-xs font-mono desktop-only"
+                style="color: var(--danger); white-space: nowrap;"
+                title="在网页彻底终止并关闭整个会话"
               >
-                🛑 关闭整个会话
+                🛑 关会话
               </button>
             </div>
           </div>
 
           <!-- Modal Body (Terminal Output Viewport) -->
-          <div class="modal-body" style="padding: 12px; flex: 1 1 auto; min-height: 320px; display: flex; flex-direction: column; gap: 10px; background: #070b09;">
+          <div class="modal-body" style="padding: 10px 12px; flex: 1 1 auto; min-height: 260px; display: flex; flex-direction: column; gap: 8px; background: #070b09;">
             <!-- CRT Terminal Box -->
             <div id="tmux-term-viewport" class="tmux-terminal-screen">
-              <pre class="tmux-terminal-pre">{{ tmuxTerminalText }}</pre>
+              <pre class="tmux-terminal-pre" :style="{ fontSize: tmuxFontSize + 'px', lineHeight: '1.45' }">{{ tmuxTerminalText }}</pre>
             </div>
 
             <!-- Quick Signals Bar -->
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-              <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                <span style="font-size: 11px; color: var(--ink-muted);">控制信号:</span>
-                <button type="button" @click="sendTmuxSignal('ctrl-c')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px; color: var(--danger); border-color: rgba(224,96,85,0.3);">
-                  ^C (中止)
+            <div class="tmux-signals-strip">
+              <div class="tmux-signals-list font-mono">
+                <span style="font-size: 11px; color: var(--ink-muted); flex-shrink: 0;">控制:</span>
+                <button type="button" @click="sendTmuxSignal('ctrl-c')" class="btn btn-secondary btn-xs font-mono" style="color: var(--danger); border-color: rgba(224,96,85,0.3); flex-shrink: 0;">
+                  ^C 中止
                 </button>
-                <button type="button" @click="sendTmuxSignal('ctrl-d')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px;" title="向当前窗口发送 EOF / 退出 Shell">
-                  ^D (退出)
+                <button type="button" @click="sendTmuxSignal('ctrl-d')" class="btn btn-secondary btn-xs font-mono" style="flex-shrink: 0;" title="向当前窗口发送 EOF / 退出 Shell">
+                  ^D 退出
                 </button>
-                <button type="button" @click="sendTmuxCommand('exit')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px; color: var(--danger);" title="向当前窗口发送 exit 退出指令">
+                <button type="button" @click="sendTmuxCommand('exit')" class="btn btn-secondary btn-xs font-mono" style="color: var(--danger); flex-shrink: 0;" title="发送 exit 退出指令">
                   exit
                 </button>
-                <button type="button" @click="sendTmuxSignal('enter')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px;">
+                <button type="button" @click="sendTmuxSignal('enter')" class="btn btn-secondary btn-xs font-mono" style="flex-shrink: 0;">
                   ⏎ 回车
                 </button>
-                <button type="button" @click="sendTmuxCommand('/clear')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px;">
+                <button type="button" @click="sendTmuxCommand('/clear')" class="btn btn-secondary btn-xs font-mono" style="flex-shrink: 0;">
                   /clear
                 </button>
-                <button type="button" @click="sendTmuxCommand('/compact')" class="btn btn-secondary btn-sm font-mono" style="padding: 2px 8px; font-size: 11px; min-height: 26px;">
+                <button type="button" @click="sendTmuxCommand('/compact')" class="btn btn-secondary btn-xs font-mono" style="flex-shrink: 0;">
                   /compact
+                </button>
+                <button type="button" @click="closeCurrentTmuxSession" class="btn btn-ghost btn-xs font-mono mobile-only" style="color: var(--danger); flex-shrink: 0;" title="彻底终止并关闭整个会话">
+                  🛑 关会话
                 </button>
               </div>
 
               <!-- Line Count Selector -->
-              <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-muted);">
+              <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-muted); flex-shrink: 0;">
                 <span>行数:</span>
-                <select v-model="tmuxTerminalLines" @change="loadTmuxPane" class="form-input font-mono" style="padding: 1px 4px; height: 26px; font-size: 11px; width: 75px;">
+                <select v-model="tmuxTerminalLines" @change="loadTmuxPane" class="form-input font-mono" style="padding: 1px 4px; height: 24px; font-size: 11px; width: 72px;">
                   <option :value="50">50 行</option>
                   <option :value="100">100 行</option>
                   <option :value="200">200 行</option>
@@ -3707,16 +3846,15 @@
               </div>
             </div>
 
-            <!-- Quick Prompt Presets -->
-            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--line);">
-              <span style="font-size: 11px; color: var(--ink-muted);">快捷指令:</span>
+            <!-- Quick Prompt Presets (Single Row Horizontal Smooth Scroll) -->
+            <div class="tmux-quick-prompts-strip">
+              <span style="font-size: 11px; color: var(--ink-muted); flex-shrink: 0;">快捷:</span>
               <button
                 v-for="qp in quickPrompts"
                 :key="qp"
                 type="button"
                 @click="sendTmuxCommand(qp)"
-                class="badge font-mono"
-                style="cursor: pointer; font-size: 10px; padding: 2px 8px; background: rgba(59, 192, 142, 0.08); color: var(--accent); border-color: rgba(59, 192, 142, 0.25);"
+                class="tmux-quick-prompt-chip font-mono"
                 :title="'一键派发: ' + qp"
               >
                 {{ qp }}
@@ -3725,28 +3863,28 @@
           </div>
 
           <!-- Modal Foot (Command Dispatch Input) -->
-          <div class="modal-foot" style="padding: 10px 14px; background: var(--bg-elev-2); border-top: 1px solid var(--line);">
-            <form @submit.prevent="sendTmuxCommand()" style="width: 100%; display: flex; gap: 8px; align-items: center;">
+          <div class="modal-foot" style="padding: 8px 12px; background: var(--bg-elev-2); border-top: 1px solid var(--line);">
+            <form @submit.prevent="sendTmuxCommand()" style="width: 100%; display: flex; gap: 6px; align-items: center;">
               <input
                 type="text"
                 v-model="tmuxDispatchText"
                 class="form-input font-mono"
-                placeholder="向此 Tmux 终端输入指令或 Prompt (按回车发送)..."
-                style="flex: 1; height: 38px; font-size: 13px;"
+                placeholder="向终端输入指令或 Prompt (按回车发送)..."
+                style="flex: 1; height: 36px; font-size: 12px;"
                 :disabled="tmuxSending"
               >
               <button
                 type="submit"
                 class="btn btn-primary btn-sm"
                 :disabled="tmuxSending || !tmuxDispatchText.trim()"
-                style="height: 38px; padding: 0 16px; font-size: 13px;"
+                style="height: 36px; padding: 0 14px; font-size: 12px; white-space: nowrap; flex-shrink: 0;"
               >
-                <svg v-if="tmuxSending" class="spin-anim" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg v-if="tmuxSending" class="spin-anim" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
                   <path d="M12 2a10 10 0 0 1 10 10"/>
                 </svg>
                 <span v-else>🚀</span>
-                <span>{{ tmuxSending ? '发送中...' : '发送指令' }}</span>
+                <span>{{ tmuxSending ? '...' : '发送' }}</span>
               </button>
             </form>
           </div>
@@ -4034,6 +4172,32 @@
               <p class="font-mono text-muted" style="font-size: 11px; margin-top: 2px;">{{ selectedSession?.id }}</p>
             </div>
             <button @click="showSessionModal = false" class="btn btn-ghost btn-sm">✕</button>
+          </div>
+
+          <!-- Session Meta & Token Stats Banner -->
+          <div v-if="selectedSession" style="padding: 10px 18px; background: rgba(14, 22, 19, 0.95); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span class="badge" :class="selectedSession.type === 'claude' ? 'badge-accent' : 'badge-gold'" style="font-size: 11px;">
+                {{ selectedSession.type === 'claude' ? 'Claude Code' : 'Codex CLI' }}
+              </span>
+              <span class="badge font-mono" style="font-size: 11px;">{{ selectedSession.model }}</span>
+              <span style="font-size: 11px; color: var(--ink-muted);">{{ selectedSession.turns || 1 }} 轮交互</span>
+              <span style="font-size: 11px; color: var(--ink-muted);">· {{ selectedSession.formatted_size }}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 12px;" class="font-mono tabular">
+              <span title="输入 Prompt Tokens" style="color: #60a5fa;">
+                Prompt: <strong>{{ selectedSession.input_tokens > 1000 ? (selectedSession.input_tokens / 1000).toFixed(1) + 'k' : (selectedSession.input_tokens || 0) }}</strong>
+              </span>
+              <span title="输出 Output Tokens" style="color: #34d399;">
+                Output: <strong>{{ selectedSession.output_tokens > 1000 ? (selectedSession.output_tokens / 1000).toFixed(1) + 'k' : (selectedSession.output_tokens || 0) }}</strong>
+              </span>
+              <span v-if="selectedSession.cache_read_tokens" title="Cache 命中读取 Tokens" style="color: var(--gold);">
+                Cache: <strong>{{ selectedSession.cache_read_tokens > 1000 ? (selectedSession.cache_read_tokens / 1000).toFixed(1) + 'k' : selectedSession.cache_read_tokens }}</strong>
+              </span>
+              <span style="color: var(--accent); font-weight: 700; padding-left: 6px; border-left: 1px solid var(--line);">
+                总计: {{ selectedSession.total_tokens > 1000 ? (selectedSession.total_tokens / 1000).toFixed(1) + 'k' : (selectedSession.total_tokens || 0) }} Tokens
+              </span>
+            </div>
           </div>
 
           <div class="modal-body" style="max-height: 65vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
@@ -4375,6 +4539,95 @@
             <button type="button" @click="executeKillTmuxWindow" class="btn btn-danger" :disabled="killingTmuxWindow">
               {{ killingTmuxWindow ? '正在关闭...' : '确认关闭窗口' }}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 11. Configuration Snapshot Import Modal -->
+      <div v-if="showImportModal" class="modal-backdrop" @click.self="showImportModal = false">
+        <div class="modal-dialog" style="width: min(600px, 94vw);">
+          <div class="modal-head">
+            <h3 class="modal-title">导入配置快照恢复</h3>
+            <button @click="showImportModal = false" class="btn btn-ghost btn-sm">✕</button>
+          </div>
+
+          <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
+            <p style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">
+              选择从 CLI Panel 导出的 <code>.json</code> 快照文件，或直接在下方粘贴 JSON 文本。导入后将自动恢复供应商、API 密钥、启动器、Codex Profile 及技能。
+            </p>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">选择快照文件 (.json)</label>
+              <input type="file" accept=".json" @change="onImportFileSelected" class="form-input" style="padding: 6px;" />
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">或直接粘贴配置 JSON 文本</label>
+              <textarea
+                v-model="importBundleText"
+                class="form-input font-mono"
+                style="height: 180px; font-size: 11px; resize: vertical;"
+                placeholder='{"version":"1.1.0","providers":[...],"skills":[...]}'
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="modal-foot">
+            <button type="button" @click="showImportModal = false" class="btn btn-ghost">取消</button>
+            <button
+              type="button"
+              @click="executeImportBundle"
+              class="btn btn-primary"
+              :disabled="importingBundle || !importBundleText.trim()"
+            >
+              {{ importingBundle ? '正在恢复环境...' : '确认导入并应用配置' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 12. Global Spotlight Command Palette (Ctrl+K) -->
+      <div v-if="showPalette" class="spotlight-backdrop" @click.self="showPalette = false">
+        <div class="spotlight-dialog">
+          <div class="spotlight-head">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              type="text"
+              v-model="paletteQuery"
+              class="spotlight-input font-mono"
+              placeholder="搜索面板、执行全局指令 (输入关键词或快捷指令)..."
+              autofocus
+            />
+            <span style="font-size: 11px; color: var(--ink-muted); font-family: var(--font-mono); border: 1px solid var(--line); padding: 1px 6px; border-radius: 4px;">ESC 关闭</span>
+          </div>
+
+          <div class="spotlight-body">
+            <div
+              v-for="item in filteredPaletteItems"
+              :key="item.id"
+              class="spotlight-item"
+              @click="selectPaletteItem(item)"
+            >
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 16px;">{{ item.icon }}</span>
+                <div>
+                  <div class="spotlight-item-title font-mono" style="font-weight: 600; color: var(--ink); font-size: 13px;">{{ item.title }}</div>
+                </div>
+              </div>
+              <span class="badge font-mono" style="font-size: 10px;">{{ item.group }}</span>
+            </div>
+
+            <div v-if="!filteredPaletteItems.length" style="padding: 30px; text-align: center; color: var(--ink-muted); font-size: 13px;">
+              未找到匹配的指令或面板
+            </div>
+          </div>
+
+          <div class="spotlight-foot">
+            <span>快捷键: <kbd style="background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">Ctrl K</kbd> / <kbd style="background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">⌘K</kbd> 随时唤起</span>
+            <span class="font-mono">CLI Panel Spotlight</span>
           </div>
         </div>
       </div>
