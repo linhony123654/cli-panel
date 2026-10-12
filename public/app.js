@@ -958,6 +958,7 @@ const app = createApp({
     const showImportModal = ref(false);
     const importBundleText = ref('');
     const importingBundle = ref(false);
+    const importResult = ref(null);
 
     async function downloadFullExport() {
       exportingBundle.value = true;
@@ -1013,9 +1014,22 @@ const app = createApp({
           body: parsed
         });
         const c = res.counts || {};
-        showToast(`导入成功！恢复: ${c.providers || 0} 个供应商, ${c.launchers || 0} 个启动器, ${c.profiles || 0} 个Profile, ${c.skills || 0} 个技能`, 'success');
-        showImportModal.value = false;
-        importBundleText.value = '';
+        const detail = `${c.providers || 0} 供应商 / ${c.launchers || 0} 启动器 / ${c.profiles || 0} Profile / ${c.skills || 0} 技能 / ${c.rules || 0} 规则`
+          + (c.claude_settings ? ' / 设置' : '') + (c.statusline ? ' / 状态栏' : '');
+        const sk = res.skipped || {};
+        const lines = Object.entries(sk)
+          .filter(([, arr]) => Array.isArray(arr) && arr.length)
+          .flatMap(([k, arr]) => arr.map(x => `${k}｜${x.id || x.cmd || x.name}：${x.reason || '未说明'}`));
+        importResult.value = { counts: detail, skipped: lines, ok: !!res.ok };
+        if (res.ok) {
+          showToast(`导入完成：${detail}`, 'success');
+        } else {
+          showToast(`导入部分完成：${detail}｜跳过 ${res.skipped_total || 0} 项，详见结果`, 'warning');
+        }
+        if (res.ok) {
+          showImportModal.value = false;
+          importBundleText.value = '';
+        }
         await loadState();
         await loadBackups();
       } catch (err) {
@@ -2760,6 +2774,7 @@ const app = createApp({
       showImportModal,
       importBundleText,
       importingBundle,
+      importResult,
       onImportFileSelected,
       executeImportBundle,
       // Select Options

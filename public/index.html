@@ -4553,7 +4553,7 @@
 
           <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
             <p style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">
-              选择从 CLI Panel 导出的 <code>.json</code> 快照文件，或直接在下方粘贴 JSON 文本。导入后将自动恢复供应商、API 密钥、启动器、Codex Profile 及技能。
+              选择从 CLI Panel 导出的 <code>.json</code> 快照文件，或直接在下方粘贴 JSON 文本。导入后将自动恢复供应商、API 密钥、启动器（含别名与 Codex 启动器）、<code>~/.codex/config.toml</code> 与 catalog、Codex Profile、技能及规则；被覆盖的文件都会先自动备份。
             </p>
 
             <div class="form-group" style="margin-bottom: 0;">
@@ -4567,8 +4567,18 @@
                 v-model="importBundleText"
                 class="form-input font-mono"
                 style="height: 180px; font-size: 11px; resize: vertical;"
-                placeholder='{"version":"1.1.0","providers":[...],"skills":[...]}'
+                placeholder='{"version":"1.2.0","providers":[...],"launchers":[...],"skills":[...]}'
               ></textarea>
+            </div>
+
+            <div v-if="importResult" style="font-size: 12px; line-height: 1.6; border-radius: 6px; padding: 10px 12px;"
+                 :style="importResult.ok ? 'background: rgba(34,160,90,.12);' : 'background: rgba(220,140,0,.14);'">
+              <strong>{{ importResult.ok ? '导入完成' : '导入部分完成（有跳过项）' }}</strong>
+              <div style="margin-top: 4px;">恢复：{{ importResult.counts }}</div>
+              <div v-if="importResult.skipped.length" style="margin-top: 6px;">
+                <div style="font-weight: 600;">跳过明细：</div>
+                <div v-for="(line, i) in importResult.skipped" :key="i" class="font-mono" style="font-size: 11px;">{{ line }}</div>
+              </div>
             </div>
           </div>
 

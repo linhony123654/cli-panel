@@ -36,9 +36,10 @@
 - **🧠 记忆库与项目准则沉淀 (Memory & Rules)**
   - 统一查看与编辑持久化长期记忆（Memory）及自动维护的 `MEMORY.md` 索引。
   - 各项目 `CLAUDE.md` / `AGENTS.md` 工程规范在线对账。
-- **💾 全量配置包导出与迁移 (Config Bundle Export / Import)**
-  - 一键打包供应商与密钥、Claude 启动器（含手写脚本原文）、Codex Profiles、Skills 与项目规则为单个 JSON。
-  - 导入时逐类回报成功数与**跳过明细**（缺供应商、规则文件不存在等），不再静默失败。
+- **💾 整机配置包导出与迁移 (Config Bundle Export / Import)**
+  - 一键打包供应商与密钥、`~/.local/bin` 下全部启动器原文（Claude / Codex / 别名，含手写脚本）、`~/.codex/config.toml` 与 catalog JSON、Codex Profiles、Skills 与项目规则为单个 JSON。
+  - 导入按原文逐字节还原，覆盖前自动备份；逐类回报成功数与**跳过明细**，弹窗内直接列出，不再静默失败。
+  - ⚠️ 快照含明文 API 密钥，视同机密文件保管。
 - **🩺 系统环境自检与修复 (Doctor)**
   - 自动化检查 Node.js、Go 编译器、Python 环境、Tmux 终端、网络代理连通性并提供一键修复指令。
 

@@ -39,16 +39,25 @@ function send(res, status, body, headers = {}) {
   res.end(data);
 }
 
-function readBody(req) {
+function readBody(req, limit = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
+    let aborted = false;
     req.on('data', c => {
+      if (aborted) return;
       size += c.length;
-      if (size > 1024 * 1024) { reject(new HttpError(413, '请求体过大')); req.destroy(); return; }
+      if (size > limit) {
+        // 不能 req.destroy()：那会直接掐断 socket，客户端拿不到 413 只能看到空响应
+        aborted = true;
+        reject(new HttpError(413, '请求体过大'));
+        req.resume();
+        return;
+      }
       chunks.push(c);
     });
     req.on('end', () => {
+      if (aborted) return;
       if (!chunks.length) return resolve({});
       try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new HttpError(400, 'JSON 格式错误')); }
     });
@@ -877,7 +886,9 @@ const server = http.createServer(async (req, res) => {
     if (!r.open && !auth.verify(cookies(req)[COOKIE])) throw new HttpError(401, '未登录或会话已过期');
     const m = url.pathname.match(r.re);
     const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
-    const body = req.method === 'GET' ? {} : await readBody(req);
+    // 配置包导入要带上 catalog/技能正文，实测已超 1.6MB，故单独放宽上限
+    const bodyLimit = url.pathname === '/api/system/import' ? 32 * 1024 * 1024 : 1024 * 1024;
+    const body = req.method === 'GET' ? {} : await readBody(req, bodyLimit);
     const out = await r.handler(req, res, body, params, url.searchParams);
     send(res, 200, out);
   } catch (e) {

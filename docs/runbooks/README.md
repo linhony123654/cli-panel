@@ -42,6 +42,58 @@
    node -e 'require("smol-toml").parse(require("fs").readFileSync(process.env.HOME+"/.codex/config.toml","utf8"));console.log("ok")'
    ```
 
+### 必须走真实 HTTP（不可只测函数）
+
+函数级往返测试**证明不了功能可用**——曾出现「`exportBundle`/`importBundle` 直调全部通过，但接口实际不可用」的情况（请求体超限，见 `docs/incidents/`）。每次改接口后跑：
+
+```bash
+cd /home/ubuntu/cli-panel
+node -e "const b=require('./lib/backup_bundle');require('fs').writeFileSync('/tmp/snap.json',JSON.stringify(b.exportBundle()))"
+PW=$(cat data/INITIAL_PASSWORD.txt | tr -d '\n\r ')
+curl -s -o /dev/null -X POST -H 'X-Requested-With: cli-panel' -H 'Content-Type: application/json' \
+  -d "{\"password\":\"$PW\"}" -c /tmp/ck.txt http://127.0.0.1:9099/api/login
+curl -s -w '\nHTTP %{http_code}\n' -X POST -H 'X-Requested-With: cli-panel' -H 'Content-Type: application/json' \
+  -b /tmp/ck.txt --data-binary @/tmp/snap.json http://127.0.0.1:9099/api/system/import
+rm -f /tmp/ck.txt /tmp/snap.json
+```
+
+期望：`HTTP 200` 且 `skipped_total: 0`。**任何非 200 或空响应都是回归。**
+
+### 覆盖范围回归清单
+
+快照应当同时含以下各项（缺一即为回归）：
+
+| 类别 | 本机基准 | 说明 |
+|---|---|---|
+| `launchers` | 13 | 7 个 claude 启动器 + 6 个 codex 启动器；别名脚本存在时也计入 |
+| `providers` | 3 | 含 API Key |
+| `codex_config` | 1 | `~/.codex/config.toml` 原文 |
+| `codex_catalogs` | 7 | profile 引用的 catalog JSON |
+| `codex_profiles` | 8 | |
+| `claude_settings` | 1 | `~/.claude/settings.json` 原文 |
+| `statusline` | 1 | `~/.claude/statusline.py` |
+| `skills` | 21 | 仅 `SKILL.md`；附属文件另见 `export_warnings` |
+| `rules` | 10 | |
+
+`export_warnings` 会列出**未纳入快照**的内容（如多文件 skill 的 `references/`、`assets/`、脚本目录）。它是「包不完整」的唯一信号，不要忽略。
+
+数量会随本机配置变动，关键是 **`skipped_total == 0` 且还原后逐文件哈希一致**。
+
+### 安全回归（必测）
+
+导入接口接受用户 JSON，`provider.id` / catalog `file` / skill `targets` 都会拼进路径。用恶意 id 复测：
+
+```bash
+CLI_PANEL_DATA=$(mktemp -d)/data node -e '
+const b=require("./lib/backup_bundle");
+(async()=>{
+  const r=await b.importBundle({providers:[{id:"../../../../../tmp/PWN",name:"x",key:"S"}]});
+  console.log(r.counts.providers, JSON.stringify(r.skipped.providers));
+})();'
+```
+
+期望：`counts.providers` 为 `0`，`skipped.providers` 给出「id 不合法」，且 `/tmp/PWN.key` **未被创建**。
+
 ### 异常分支
 
 - `restored identical` 有 diff → 检查 `importBundle` 是否走到了 `form` 回退分支（原文丢失），见 `docs/incidents/README.md`。
